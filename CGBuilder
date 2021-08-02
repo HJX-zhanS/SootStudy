@@ -1,0 +1,71 @@
+package com.soot_test;
+
+import java.util.*;
+
+import soot.*;
+import soot.jimple.toolkits.callgraph.CallGraph;
+import soot.jimple.toolkits.callgraph.Targets;
+import soot.options.Options;
+
+public class CGBuilder extends SceneTransformer {
+
+    private static final String altClassPathOptionName = "alt-class-path";
+    private static final String irOptionName = "ir";
+    private static final String defaultIR = "jimple"; //将IR设置为Jimple
+
+    @Override
+    protected void internalTransform(String phaseName, Map<String, String> options) {
+        // 分析的核心代码
+        System.out.println(options);
+        CallGraph cg = Scene.v().getCallGraph(); // 通过Scene环境获取已经分析好的Call Graph
+        for (SootClass sc : Scene.v().getApplicationClasses()) {
+            for (SootMethod sm : sc.getMethods()) {
+                Iterator<MethodOrMethodContext> targets = new Targets(cg.edgesOutOf(sm));
+                while (targets.hasNext()) {
+                    SootMethod tgt = (SootMethod) targets.next();
+                    System.out.println(sm + " may call " + tgt);
+                }
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        // 设置Soot参数
+        List process_dir = new ArrayList();
+        process_dir.add(".\\TargetSample"); // 设置目标文件的目录，相当于命令行中的参数-process-dir
+
+        // 设置Soot Classpath的路径，相当于命令行中的参数-cp
+        Options.v().set_soot_classpath(".");
+        Options.v().set_process_dir(process_dir);
+
+        Options.v().set_prepend_classpath(true); // 将给定的Soot Classpath添加到默认Classpath中，相当于命令行中的参数-pp
+        Options.v().set_whole_program(true); // 设置全程序分析选项，相当于命令行中的参数-w
+        Options.v().set_allow_phantom_refs(true); // 用来解决设置-w参数后报错问题
+
+        // 加载主类
+        // 这里需要注意，如果分析的Java代码没有依赖，可以通过如下方式载入，也就是手动指定待分析代码的主类
+        // 但是如果分析的Java代码有依赖，则需要通过其他方式载入，否则报：Main class has no main method错误
+        // SootClass mainClass = Scene.v().loadClassAndSupport("Hello");
+        // Scene.v().setMainClass(mainClass);
+
+        // 对于分析的Java代码存在依赖的情况，采用如下方式载入
+        Scene.v().loadNecessaryClasses();
+
+        // 设置用于进行分析的Transformer，当使用-w选项时，transform需要扩展SceneTransformer抽象类
+        // 最常用的Transformer抽象类有：BodyTransformer和SceneTransformer
+        CGBuilder cgBuilder = new CGBuilder(); //这里的CGBuilder就是一个Transforme
+        // r
+        Transform myTransform = new Transform("wjtp.CGBuilder", cgBuilder); //phaseName为自定义phase的名字，但是注意要以wjtp、jtp等pack名为前缀
+
+        // 设置Transformer的参数
+        myTransform.setDeclaredOptions("enabled " + altClassPathOptionName + ' ' + irOptionName + ' ');
+        myTransform.setDefaultOptions("enabled " + altClassPathOptionName + ": " + ' ' + irOptionName + ':' + defaultIR + ' ');
+
+        // 将自定义Transformer添加到wjtp Pack中
+        PackManager.v().getPack("wjtp").add(myTransform);
+
+        // run Pack以进行分析，此时会自动调用internalTransform函数实现分析
+        PackManager.v().runPacks();
+
+    }
+}
